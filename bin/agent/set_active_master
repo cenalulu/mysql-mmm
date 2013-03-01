@@ -1,0 +1,46 @@
+#!/usr/bin/env perl
+
+# Use mandatory external modules
+use strict;
+use warnings FATAL => 'all';
+use MMM::Common::Config;
+use MMM::Agent::Helpers::Actions;
+
+# Check arguments
+if (scalar(@ARGV) != 2) {
+	print "Usage: $0 <config_file> <new_master>\n\n";
+	exit(1);
+}
+
+my $config_file = shift;
+my $new_master = shift;
+
+# Read config file
+our $config = new MMM::Common::Config::;
+$config->read($config_file);
+$config->check('AGENT');
+
+# Finally do the work
+my $output = MMM::Agent::Helpers::Actions::set_active_master($new_master);
+
+print $output, "\n";
+exit(0);
+
+__END__
+
+=head1 NAME
+
+set_active_master
+
+=head1 DESCRIPTION
+
+set_active_master is a helper binary for B<mmm_agentd>. It tries to catch up with the old master as far as possible and changes the master to the new host.
+(Syncs to the master log if the old master is reachable. Otherwise syncs to the relay log.)
+
+=head1 USAGE
+
+set_active_master <new_master>
+
+=head1 EXAMPLE
+
+set_active_master db2

@@ -1,0 +1,206 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings FATAL => 'all';
+use English qw( PROGRAM_NAME );
+use File::Basename;
+use Log::Log4perl qw(:easy);
+use Getopt::Long;
+Log::Log4perl->easy_init( { level => $INFO, layout => '%p: %m%n' });
+
+# Define version
+use constant MMM_VERSION => '2.2.1';
+
+# Include parts of the system
+use MMM::Common::Config;
+use MMM::Tools::Tools;
+use MMM::Tools::MySQL;
+
+# Maybe we were just asked for our version
+if (scalar(@ARGV) == 1 && $ARGV[0] eq "--version") {
+    printf "%s %s\n", basename($PROGRAM_NAME), MMM_VERSION;
+    exit(0);
+}
+
+our @CLONE_MODES = qw(
+	master-master
+	master-slave
+	slave-slave
+);
+
+my $config_file	= '';
+my $host_name	= '';
+my $clone_mode	= '';
+my $copy_method	= '';
+my $dest_dir	= '';
+my $dry_run		= 0;
+
+print_usage() unless (
+	GetOptions(
+		'config=s'      => \$config_file,
+		'host=s'        => \$host_name,
+		'clone-mode=s'  => \$clone_mode,
+		'copy-method=s' => \$copy_method,
+		'dest-dir=s'    => \$dest_dir,
+		'dry-run'       => \$dry_run
+	)
+);
+
+$config_file	= 'mmm_tools'						if ($config_file eq '');
+
+# Read configuration
+our $config = new MMM::Common::Config::;
+$config->read($config_file);
+$config->check('TOOLS');
+
+# Check params and set defaults
+print_usage("Invalid host name '$host_name'")	unless (defined($config->{host}->{$host_name}));
+print_usage("We can't clone ourselves")			unless ($host_name ne $config->{this});
+
+my $dest_host_info	= $config->{host}->{$config->{this}};
+
+$copy_method	= $config->{default_copy_method}	if ($copy_method eq '');
+$dest_dir		= $dest_host_info->{restore_dir}	if ($dest_dir    eq '');
+
+print_usage("Unknown clone mode '$clone_mode'")				unless (grep(/^$clone_mode$/, @CLONE_MODES));
+print_usage("Invalid copy method '$copy_method'")			unless (defined($config->{copy_method}->{$copy_method}));
+print_usage("Only copy methods which create an exact copy can be used for cloning")
+															unless ($config->{copy_method}->{$copy_method}->{true_copy});
+print_usage("Invalid destination directory '$dest_dir'")	unless (MMM::Tools::Tools::check_restore_destination($dest_dir));
+
+
+# Determine replication peer
+my $peer_host		= $host_name;
+if ($clone_mode eq 'slave-slave') {
+	my $master_ip = MMM::Tools::MySQL::get_master_host($host_name);
+	die unless ($master_ip);
+	$peer_host	= MMM::Tools::Tools::get_host_by_ip($master_ip);
+}
+
+unless (defined($config->{host}->{$peer_host})) {
+	LOGDIE "Unknown peer host '$peer_host'";
+}
+
+my $peer_host_info = $config->{host}->{$peer_host};
+
+
+
+# Print info
+my $label;
+my $value;
+format CLONE_INFO =
+ @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+ $label,               $value
+.
+$FORMAT_NAME = 'CLONE_INFO';
+
+$label = 'Source host';
+$value = $host_name;
+write;
+
+$label = 'Destination dir';
+$value = $dest_dir;
+write;
+
+$label = 'Dirs to clone';
+$value = join(', ', sort(@{$config->{clone_dirs}}));
+write;
+
+$label = 'Clone mode';
+$value = $clone_mode;
+write;
+
+$label = 'Copy method';
+$value = $copy_method;
+write;
+
+$label = 'Replication peer';
+$value = $peer_host;
+write;
+
+$label = 'Setup master-master replication';
+$value = ($clone_mode eq 'master-master'? 'yes' : 'no');
+write;
+
+$label = 'Dry run';
+$value = $dry_run ? 'yes' : 'no';
+write;
+
+# Stop here if this is a dry-run
+exit 0 if ($dry_run);
+
+
+# Stop mysql
+die unless (MMM::Tools::MySQL::stop());
+
+
+# Fetch snapshot from remote host
+die unless (MMM::Tools::Tools::check_ssh_connection($host_name));
+die unless (MMM::Tools::Tools::create_remote_snapshot($host_name));
+die unless (MMM::Tools::Tools::copy_clone_dirs($host_name, $copy_method, $dest_dir));
+die unless (MMM::Tools::Tools::copy_from_remote($host_name, 'scp', $dest_dir, '_mmm'));
+die unless (MMM::Tools::Tools::save_copy_method($dest_dir, $copy_method));
+die unless (MMM::Tools::Tools::remove_remote_snapshot($host_name));
+
+# Load information from status file
+my $status = MMM::Tools::Tools::load_status($dest_dir);
+die unless (defined($status));
+
+# Cleanup
+die unless (MMM::Tools::Tools::cleanup($status, $dest_dir, $config->{clone_dirs}));
+
+# Start MySQL server
+die unless (MMM::Tools::MySQL::start());
+
+
+# Setup replication
+my %dest_replication_info		= (
+	host		=> $config->{this},
+	master_host	=> $peer_host_info->{ip},
+	master_port	=> $peer_host_info->{mysql_port},
+	master_user	=> $peer_host_info->{replication_user},
+	master_pass	=> $peer_host_info->{replication_password},
+);
+
+if ($clone_mode eq 'master-slave' || $clone_mode eq 'master-master') {
+	$dest_replication_info{master_log}	= $status->{master}->{'File'};
+	$dest_replication_info{master_pos}	= $status->{master}->{'Position'};
+	die unless MMM::Tools::MySQL::change_master_to(\%dest_replication_info);
+}
+elsif ($clone_mode eq 'slave-slave') {
+	$dest_replication_info{master_log}	= $status->{slave}->{'Relay_Master_Log_File'};
+	$dest_replication_info{master_pos}	= $status->{slave}->{'Exec_Master_Log_Pos'};
+	die unless MMM::Tools::MySQL::change_master_to(\%dest_replication_info);
+}
+
+# Setup peer replication
+if ($clone_mode eq 'master-master') {
+	my %peer_replication_info		= (
+		host		=> $peer_host,
+		master_host	=> $dest_host_info->{ip},
+		master_port	=> $dest_host_info->{mysql_port},
+		master_user	=> $dest_host_info->{replication_user},
+		master_pass	=> $dest_host_info->{replication_password},
+	);
+	die unless MMM::Tools::MySQL::change_master_to(\%peer_replication_info);
+}
+
+INFO 'Clone operation finished!';
+
+exit 0;
+
+sub print_usage {
+	my $msg = shift;
+
+	print "$msg\n\n" if ($msg);
+	print "Usage: $0 [--config <config file>] --host <host> --clone-mode <mode> [--copy-method <copy method>] [--dest-dir <dir>]\n";
+	if ($main::config) {
+		my @allowed_methods = grep { $main::config->{copy_method}->{$_}->{true_copy}} keys(%{$main::config->{copy_method}});
+		print "Where:\n";
+		printf("  host       : %s\n", join(' | ', sort(keys(%{$main::config->{host}}))));
+		printf("  clone-mode : %s\n", join(' | ', sort(@CLONE_MODES)));
+		printf("  copy-method: %s (default: %s)\n", join(' | ', sort(@allowed_methods)), $config->{default_copy_method});
+		print  "  dest-dir   : directory where data should be cloned to\n\n";
+	}
+	exit(1);
+}

@@ -1,0 +1,38 @@
+#!/usr/bin/env perl
+
+# Use mandatory external modules
+use strict;
+use warnings FATAL => 'all';
+use MMM::Agent::Helpers::Actions;
+
+# Check arguments
+if (scalar(@ARGV) != 3) {
+	print "Usage: $0 <config_file> <interface> <ip>\n\n";
+	exit(1);
+}
+
+# Fetch arguments
+my $config_file = shift;
+my $if = shift;
+my $ip = shift;
+
+# Finally do the work
+MMM::Agent::Helpers::Actions::clear_ip($if, $ip);
+
+__END__
+
+=head1 NAME
+
+clear_ip
+
+=head1 DESCRIPTION
+
+clear_ip is a helper binary for B<mmm_agentd>. It removes the given ip from the given interface.
+
+=head1 USAGE
+
+clear_ip <interface> <ip>
+
+=head1 EXAMPLE
+
+clear_ip eth0 192.168.0.200

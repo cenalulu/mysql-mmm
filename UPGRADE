@@ -1,0 +1,49 @@
+===== Upgrading from 2.0.x to 2.1.0 =====
+
+MMM 2.1.0 is backwards compatible with MMM 2.0.x, so a monitoring host running
+version 2.1.0 can talk to agents running 2.0.x and the other way around
+
+
+==== On the monitoring host ====
+ 1. Stop mmmd_mon (if you have multiple clusters running, be sure to stop all
+    instances of mmmd_mon):
+        /etc/init.d/mysql-mmm-monitor stop
+ 2. When using the .debs edit /etc/default/mysql-mmm-monitor and set ENABLED
+    to 0.
+ 3. Install the new version of MMM.
+ 4. mmmd_mon was renamed to mmm_mond. So you can delete the old binary:
+        rm -f /usr/sbin/mmmd_mon
+ 5. If you have multiple clusters running, recreate your init-scripts for these
+    by cloning /etc/init.d/mysql-mmm-monitor and adjusting the variable CLUSTER
+ 6. (Optional) Edit mmm_mon.conf and change status_path from
+    /var/lib/misc/mmmd_mon.status to /var/lib/misc/mmm_mond.status - afterwards
+    copy the existing status file to its new location:
+        cp /var/lib/misc/mmmd_mon.status /var/lib/misc/mmm_mond.status
+ 7. Edit mmm_mon.conf and change pid_path from /var/run/mmmd_mon.pid to
+    /var/run/mmm_mond.pid
+ 8. The helper binaries have been moved so edit mmm_*.conf and change bin_path
+    from /usr/bin/mysql-mmm/ to /usr/lib/mysql-mmm/ - then delete the old
+    binaries:
+        rm -rf /usr/bin/mysql-mmm
+ 9. When using the .debs edit /etc/default/mysql-mmm-monitor and set ENABLED
+    to 1.
+10. Start mmm_mond (if you use more than one cluster, don't forget to start them
+    too):
+        /etc/init.d/mysql-mmm-monitor start
+
+==== On agent hosts ====
+ 1. Stop mmmd_agent:
+        /etc/init.d/mysql-mmm-agent stop
+ 2. When using the .debs edit /etc/default/mysql-mmm-agent and set ENABLED to 0
+ 3. Install the new version of MMM.
+ 4. mmmd_agent was renamed to mmm_agentd. So you can delete the old binary:
+        rm -f /usr/sbin/mmmd_agent
+ 5. The helper binaries have been moved so edit mmm_*.conf and change bin_path
+    from /usr/bin/mysql-mmm/ to /usr/lib/mysql-mmm/ - then delete the old
+    binaries:
+        rm -rf /usr/bin/mysql-mmm
+ 6. Edit mmm_*.conf and change pid_path in the <host> sections from
+    /var/run/mmmd_agent.pid to /var/run/mmm_agentd.pid
+ 7. When using the .debs edit /etc/default/mysql-mmm-agent and set ENABLED to 1
+ 8. Start mmm_agentd:
+        /etc/init.d/mysql-mmm-agent start

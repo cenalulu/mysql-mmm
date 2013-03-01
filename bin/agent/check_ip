@@ -1,0 +1,38 @@
+#!/usr/bin/env perl
+
+# Use mandatory external modules
+use strict;
+use warnings FATAL => 'all';
+use MMM::Agent::Helpers::Actions;
+
+# Check arguments
+if (scalar(@ARGV) != 3) {
+	print "Usage: $0 <config_file> <interface> <ip>\n\n";
+	exit(1);
+}
+
+# Fetch arguments
+my $config_file = shift;
+my $if = shift;
+my $ip = shift;
+
+# Finally do the work
+MMM::Agent::Helpers::Actions::check_ip($if, $ip);
+
+__END__
+
+=head1 NAME
+
+check_ip
+
+=head1 DESCRIPTION
+
+check_ip is a helper binary for B<mmm_agentd>. It checks if the given ip is configured.
+
+=head1 USAGE
+
+check_ip <interface> <ip>
+
+=head1 EXAMPLE
+
+check_ip eth0 192.168.0.200

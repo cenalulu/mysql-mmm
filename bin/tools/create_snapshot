@@ -1,0 +1,85 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings FATAL => 'all';
+use DBI;
+use MMM::Common::Config;
+use MMM::Tools::Snapshot::LVM;
+use MMM::Tools::Snapshot::MySQL;
+
+our $config = new MMM::Common::Config::;
+$config->read("mmm_tools");
+$config->check('TOOLS');
+
+
+print create_snapshot(), "\n";
+exit(0);
+
+
+sub create_snapshot {
+	my $this = $config->{this};
+
+	unless (defined($config->{host}->{$this})) {
+		return "ERROR: Invalid 'this' value: '$this'!";
+	}
+
+	my $host		= $config->{host}->{$this};
+	my $dump_dir	= $host->{lvm_mount_dir};
+
+	system ('mkdir', '-p', $dump_dir);
+	unless (-d $dump_dir && -w _ && -r _ && -x _) {
+		return "ERROR: Directory '$dump_dir' has invalid permissions (it must be readable/writable/executable)";
+	}
+	# Check mount dir
+	if (scalar(glob("$dump_dir/*"))) {
+		return "ERROR: LVM mount dir is not empty!";
+	}
+	
+	my $dbh = MMM::Tools::Snapshot::MySQL::connect($this);
+
+	return "ERROR: Can't connect to database! Error = " . DBI::errstr unless ($dbh);
+
+	my $res;
+	
+	# Lock tables
+	$res = MMM::Tools::Snapshot::MySQL::lock_tables($dbh);
+	return "ERROR: Can't lock tables! Error = " . $dbh->errstr unless ($res);
+
+	# Get position info
+	my $pos_info = {};
+	$pos_info->{host} = $config->{this};
+	$res = MMM::Tools::Snapshot::MySQL::get_pos_info($dbh, $pos_info);
+	return "ERROR: Can't get position info: $res" unless ($res =~ /^OK/);
+
+	# Create and mount snapshot
+	$res = MMM::Tools::Snapshot::LVM::create();
+	return "ERROR: Can't create or mount snapshot: $res" unless ($res =~ /^OK/);
+	
+	# Unlock tables
+	MMM::Tools::Snapshot::MySQL::unlock_tables($dbh);
+
+	# Change dir to snapshot and create _mmm directory
+	chdir($dump_dir);
+	system('mkdir -p _mmm');
+	
+	MMM::Tools::Snapshot::MySQL::save_pos_info($pos_info, '_mmm/status.txt');
+	$res = system('cp', $host->{mysql_cnf}, '_mmm/');
+	return "ERROR: Can't copy mysql config file to backup!" if ($res);
+
+	return 'OK: Snapshot created!';
+}
+
+__END__
+
+=head1 NAME
+
+remove_snapshot
+
+=head1 DESCRIPTION
+
+remove_snapshot is a helper binary for the mmm tools. It removes a snapshot created by B<create_snapshot>.
+
+=head1 USAGE
+
+remove_snapshot
+

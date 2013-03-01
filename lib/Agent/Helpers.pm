@@ -143,6 +143,15 @@ sub sync_with_master() {
 }
 
 
+sub get_master_log_file(){
+	return _execute('get_master_log_file');
+}
+
+sub get_master_log_pos() {
+	return _execute('get_master_log_pos');
+}
+
+
 =item set_active_master($new_master)
 
 Try to catch up with the old master as far as possible and change the master to the new host.
@@ -153,9 +162,10 @@ Calls B<bin/agent/set_active_master>, which reads the config file.
 =cut
 
 sub set_active_master($) {
-	my $new_master = shift;
+	my $new_master_str = shift;
+	my ($new_master, $new_master_log, $new_master_pos) = split(',', $new_master_str);
 	return "ERROR: Unknown host $new_master" unless (defined($main::config->{host}->{$new_master}));
-	return _execute('set_active_master', $new_master);
+	return _execute('set_active_master', "$new_master_str");
 }
 
 #-------------------------------------------------------------------------------

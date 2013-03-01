@@ -7,15 +7,12 @@ use MMM::Common::Config;
 use MMM::Agent::Helpers::Actions;
 
 # Check arguments
-if (scalar(@ARGV) != 2) {
-	print "Usage: $0 <config_file> <new_master_str>\n\n";
+if (scalar(@ARGV) != 1) {
+	print "Usage: $0 <config_file> \n\n";
 	exit(1);
 }
 
-my $config_file= shift;
-my $new_master_str = shift;
-my ($new_master, $new_master_log, $new_master_pos) = split(',', $new_master_str);
-
+my $config_file = shift;
 
 # Read config file
 our $config = new MMM::Common::Config::;
@@ -23,7 +20,7 @@ $config->read($config_file);
 $config->check('AGENT');
 
 # Finally do the work
-my $output = MMM::Agent::Helpers::Actions::set_active_master($new_master_str);
+my $output = MMM::Agent::Helpers::Actions::get_master_log_file();
 
 print $output, "\n";
 exit(0);

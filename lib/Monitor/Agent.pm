@@ -138,13 +138,29 @@ sub cmd_ping($) {
 	my $retries	= shift || 0;
 	return $self->_send_command_retry($retries, 'PING');
 }
-
-sub cmd_set_status($$) {
+sub cmd_get_master_log_file($$) {
 	my $self	= shift;
 	my $master	= shift;
 	my $retries	= shift || 0;
 
-	return $self->_send_command_retry($retries, 'SET_STATUS', $self->state, join(',', sort(@{$self->roles})), $master);
+	return $self->_send_command_retry($retries, 'GET_MASTER_LOG', $self->state, join(',', sort(@{$self->roles})), $master);
+}
+
+sub cmd_get_master_log_pos($$) {
+	my $self	= shift;
+	my $master	= shift;
+	my $retries	= shift || 0;
+
+	return $self->_send_command_retry($retries, 'GET_MASTER_POS', $self->state, join(',', sort(@{$self->roles})), $master);
+}
+
+
+sub cmd_set_status($$) {
+	my $self	= shift;
+	my $master_str	= shift;
+	my $retries	= shift || 0;
+
+	return $self->_send_command_retry($retries, 'SET_STATUS', $self->state, join(',', sort(@{$self->roles})), $master_str);
 }
 
 sub cmd_get_agent_status($) {

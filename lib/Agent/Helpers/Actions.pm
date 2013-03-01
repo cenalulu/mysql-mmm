@@ -285,7 +285,50 @@ sub sync_with_master() {
 	
 }
 
+sub get_master_log_file(){
+        my $this = _get_this();
 
+        # Get local connection info
+        my ($this_host, $this_port, $this_user, $this_password) = _get_connection_info($this);
+        _exit_error("No connection info for local host '$this_host'") unless defined($this_host);
+
+        # Connect to local server
+        my $this_dbh = _mysql_connect($this_host, $this_port, $this_user, $this_password);
+        _exit_error("Can't connect to MySQL (host = $this_host:$this_port, user = $this_user)! " . $DBI::errstr) unless ($this_dbh);
+
+        my $master_log_file='';
+        if ($this_dbh ) {
+                my $old_master_status = $this_dbh->selectrow_hashref('SHOW MASTER STATUS');
+                if (defined($old_master_status)) {
+                        $master_log_file = $old_master_status->{File};
+                }
+                $this_dbh->disconnect;
+        }
+        return $master_log_file;
+}
+
+
+sub get_master_log_pos(){
+       my $this = _get_this();
+
+        # Get local connection info
+        my ($this_host, $this_port, $this_user, $this_password) = _get_connection_info($this);
+        _exit_error("No connection info for local host '$this_host'") unless defined($this_host);
+
+        # Connect to local server
+        my $this_dbh = _mysql_connect($this_host, $this_port, $this_user, $this_password);
+        _exit_error("Can't connect to MySQL (host = $this_host:$this_port, user = $this_user)! " . $DBI::errstr) unless ($this_dbh);
+
+        my $master_log_pos;
+        if ($this_dbh) {
+                my $old_master_status = $this_dbh->selectrow_hashref('SHOW MASTER STATUS');
+                if (defined($old_master_status)) {
+                        $master_log_pos= $old_master_status->{Position};
+                }
+                $this_dbh->disconnect;
+        }
+        return $master_log_pos;
+}
 
 =item set_active_master($new_master)
 
@@ -295,7 +338,9 @@ Try to catch up with the old master as far as possible and change the master to 
 =cut
 
 sub set_active_master($) {
-	my $new_peer = shift;
+	my $master_str = shift;
+	my ($new_peer, $new_peer_log, $new_peer_pos) = split( ',', $master_str);
+
 	_exit_error('Name of new master is missing') unless (defined($new_peer));
 
 	my $this = _get_this();
@@ -355,13 +400,16 @@ sub set_active_master($) {
 	my $new_peer_dbh = _mysql_connect($new_peer_host, $new_peer_port, $new_peer_user, $new_peer_password);
 	_exit_error("Can't connect to MySQL (host = $new_peer_host:$new_peer_port, user = $new_peer_user)! " . $DBI::errstr) unless ($new_peer_dbh);
 
-	# Get log position of new master
-	my $new_master_status = $new_peer_dbh->selectrow_hashref('SHOW MASTER STATUS');
-	_exit_error('SQL Query Error: ' . $new_peer_dbh->errstr) unless($new_master_status);
+	if( defined($new_peer_log) && defined($new_peer_pos) ){
+		$new_peer_log=$new_peer_log;
+	}else{
+		# Get log position of new master
+		my $new_master_status = $new_peer_dbh->selectrow_hashref('SHOW MASTER STATUS');
+		_exit_error('SQL Query Error: ' . $new_peer_dbh->errstr) unless($new_master_status);
 
-	my $master_log = $new_master_status->{File};
-	my $master_pos = $new_master_status->{Position};
-
+		$new_peer_log = $new_master_status->{File};
+		$new_peer_pos = $new_master_status->{Position};
+	}
 	$new_peer_dbh->disconnect;
 
 	# Get replication credentials
@@ -373,8 +421,8 @@ sub set_active_master($) {
 			  . " MASTER_PORT=$new_peer_port,"
 			  . " MASTER_USER='$repl_user',"
 			  . " MASTER_PASSWORD='$repl_password',"
-			  . " MASTER_LOG_FILE='$master_log',"
-			  . " MASTER_LOG_POS=$master_pos";
+			  . " MASTER_LOG_FILE='$new_peer_log',"
+			  . " MASTER_LOG_POS=$new_peer_pos";
 	$res = $this_dbh->do($sql);
 	_exit_error('SQL Query Error: ' . $this_dbh->errstr) unless($res);
 

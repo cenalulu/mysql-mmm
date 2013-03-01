@@ -703,7 +703,17 @@ sub _distribute_roles($) {
 	# notify slaves first, if master host has changed
 	unless ($new_active_master eq $old_active_master) {
 		$self->send_agent_status($old_active_master, $new_active_master) if ($old_active_master);
-		$self->notify_slaves($new_active_master);
+		#my ($new_master_log,$new_master_pos) = $self->get_active_master_pos();
+		# save the new master log-pos now, it'll be used when "change master to" is issued for slaves
+		my $new_master_log = $self->get_master_log_file($new_active_master);
+		my $new_master_pos= $self->get_master_log_pos($new_active_master);
+		DEBUG "Successfully got new master pos:$new_master_log:$new_master_pos";
+
+
+		# if the master role has changed, notify the new master to take vip
+		$self->send_agent_status($new_active_master) if ($new_active_master ne $old_active_master);
+		# after the master has taken the writer role, notify all the slaves to do change master
+		$self->notify_slaves("$new_active_master,$new_master_log,$new_master_pos");
 	}
 }
 
@@ -773,15 +783,54 @@ Notify all slave hosts (used when master changes).
 
 sub notify_slaves($$) {
 	my $self		= shift;
-	my $new_master	= shift;
+	my $new_master_str =shift;
 
 	# Send status to all hosts with mode = 'slave'
 	foreach my $host (keys(%{$main::config->{host}})) {
 		next unless ($main::config->{host}->{$host}->{mode} eq 'slave');
-		$self->send_agent_status($host, $new_master);
+		DEBUG "Notify host:$host, master_str:$new_master_str";
+		$self->send_agent_status($host, $new_master_str);
 	}
 }
 
+
+=item get_master_log_file($host[, $master])
+
+Send status information to agent on host $host.
+
+=cut
+
+sub get_master_log_file($$$$$) {
+	my $self	= shift;
+	my $host	= shift;
+
+
+	my $agent = MMM::Monitor::Agents->instance()->get($host);
+
+	# Finally send command
+	my $ret = $agent->cmd_get_master_log_file($host);
+	INFO "cmd_get_master_log_file return $ret";
+	return $ret;
+}
+
+=item get_master_log_pos($host[, $master])
+
+Send status information to agent on host $host.
+
+=cut
+
+sub get_master_log_pos($$$$$) {
+	my $self	= shift;
+	my $host	= shift;
+
+
+	my $agent = MMM::Monitor::Agents->instance()->get($host);
+
+	# Finally send command
+	my $ret = $agent->cmd_get_master_log_pos($host);
+	INFO "cmd_get_master_log_pos return $ret";
+	return $ret;
+}
 
 =item send_agent_status($host[, $master])
 
@@ -792,14 +841,14 @@ Send status information to agent on host $host.
 sub send_agent_status($$$) {
 	my $self	= shift;
 	my $host	= shift;
-	my $master	= shift;
+	my $master_str	= shift;
 
 	# Never send anything to agents if we are in PASSIVE mode
 	# Never send anything to agents if we have no network connection
 	return if ($self->is_passive || !$main::have_net);
 
 	# Determine active master if it was not passed
-	$master = $self->roles->get_active_master() unless (defined($master));
+	$master_str = $self->roles->get_active_master() unless (defined($master_str));
 
 	my $agent = MMM::Monitor::Agents->instance()->get($host);
 
@@ -808,7 +857,7 @@ sub send_agent_status($$$) {
 	$agent->roles(\@roles);
 
 	# Finally send command
-	my $ret = $agent->cmd_set_status($master);
+	my $ret = $agent->cmd_set_status($master_str);
 
 	unless ($ret) {
 		# If ping is down, nothing will be send to agent. So this doesn't indicate that the agent is down.

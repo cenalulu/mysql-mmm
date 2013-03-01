@@ -96,6 +96,8 @@ sub handle_command($$) {
 	elsif	($cmd_name eq 'GET_AGENT_STATUS')	{ return $self->cmd_get_agent_status	();			}
 	elsif	($cmd_name eq 'GET_SYSTEM_STATUS')	{ return $self->cmd_get_system_status	();			}
 	elsif	($cmd_name eq 'CLEAR_BAD_ROLES')	{ return $self->cmd_clear_bad_roles		();			}
+	elsif   ($cmd_name eq 'GET_MASTER_LOG')	{ return $self->cmd_get_master_log_file(); }
+	elsif   ($cmd_name eq 'GET_MASTER_POS')	{ return $self->cmd_get_master_log_pos(); }
 
 	return "ERROR: Invalid command '$cmd_name'!";
 }
@@ -184,14 +186,17 @@ sub cmd_clear_bad_roles($) {
 	return "OK: Removed $count roles";
 }
 
-sub cmd_set_status($$) {
+sub cmd_set_status($$$) {
 	my $self	= shift;
-	my ($new_state, $new_roles_str, $new_master) = @_;
+	my ($new_state, $new_roles_str, $new_master_str) = @_;
+	my ($new_master, $new_master_log, $new_master_pos) = split(',', $new_master_str);
 
+	$new_master='' unless(defined($new_master));
 	# Change master if we are a slave
 	if ($new_master ne $self->active_master && $self->mode eq 'slave' && $new_state eq 'ONLINE' && $new_master ne '') {
-		INFO "Changing active master to '$new_master'";
-		my $res = MMM::Agent::Helpers::set_active_master($new_master);
+	
+		INFO "Changing active master to '$new_master_str'";
+		my $res = MMM::Agent::Helpers::set_active_master($new_master_str);
 		DEBUG sprintf("Result: %s", defined($res) ? $res : 'undef');
 		if (defined($res) && $res =~ /^OK/) {
 			$self->active_master($new_master);
@@ -246,6 +251,16 @@ sub cmd_set_status($$) {
 	}
 
 	return 'OK: Status applied successfully!';
+}
+
+sub cmd_get_master_log_file(){
+	my $res = MMM::Agent::Helpers::get_master_log_file();
+	return $res;
+}
+
+sub cmd_get_master_log_pos(){
+	my $res = MMM::Agent::Helpers::get_master_log_pos();
+	return $res;
 }
 
 sub check_roles($) {

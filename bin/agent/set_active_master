@@ -12,7 +12,11 @@ if (scalar(@ARGV) != 2) {
 	exit(1);
 }
 
+<<<<<<< HEAD
 my $config_file = shift;
+=======
+my $config_file= shift;
+>>>>>>> 3419ee26a2a69b4459c25e717e4695c4963ecefa
 my $new_master_str = shift;
 my ($new_master, $new_master_log, $new_master_pos) = split(',', $new_master_str);
 

@@ -186,7 +186,11 @@ sub cmd_clear_bad_roles($) {
 	return "OK: Removed $count roles";
 }
 
+<<<<<<< HEAD
 sub cmd_set_status($$) {
+=======
+sub cmd_set_status($$$) {
+>>>>>>> 3419ee26a2a69b4459c25e717e4695c4963ecefa
 	my $self	= shift;
 	my ($new_state, $new_roles_str, $new_master_str) = @_;
 	my ($new_master, $new_master_log, $new_master_pos) = split(',', $new_master_str);
@@ -194,6 +198,10 @@ sub cmd_set_status($$) {
 	$new_master='' unless(defined($new_master));
 	# Change master if we are a slave
 	if ($new_master ne $self->active_master && $self->mode eq 'slave' && $new_state eq 'ONLINE' && $new_master ne '') {
+<<<<<<< HEAD
+=======
+	
+>>>>>>> 3419ee26a2a69b4459c25e717e4695c4963ecefa
 		INFO "Changing active master to '$new_master_str'";
 		my $res = MMM::Agent::Helpers::set_active_master($new_master_str);
 		DEBUG sprintf("Result: %s", defined($res) ? $res : 'undef');

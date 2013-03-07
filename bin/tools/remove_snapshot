@@ -1,0 +1,29 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings FATAL => 'all';
+use MMM::Common::Config;
+use MMM::Tools::Snapshot::LVM;
+
+our $config = new MMM::Common::Config::;
+$config->read("mmm_tools");
+$config->check('TOOLS');
+
+
+print MMM::Tools::Snapshot::LVM::remove(), "\n";
+exit(0);
+
+__END__
+
+=head1 NAME
+
+remove_snapshot
+
+=head1 DESCRIPTION
+
+remove_snapshot is a helper binary for the mmm tools. It removes a snapshot created by B<create_snapshot>.
+
+=head1 USAGE
+
+remove_snapshot
+

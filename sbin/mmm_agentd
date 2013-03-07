@@ -1,0 +1,107 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings FATAL => 'all';
+use English qw( PROGRAM_NAME );
+use File::Basename;
+use Proc::Daemon;
+use Log::Log4perl qw(:easy);
+Log::Log4perl->easy_init($INFO);
+
+# Define version and protocol version
+use constant MMM_VERSION => '2.2.1';
+use constant MMM_PROTOCOL_VERSION => 1;
+
+
+# Include parts of the system
+use MMM::Common::Angel;
+use MMM::Common::Config;
+use MMM::Common::Log;
+use MMM::Common::PidFile;
+use MMM::Agent::Agent;
+
+
+# Maybe we were just asked for our version
+if (scalar(@ARGV) && $ARGV[0] eq "--version") {
+	printf "%s %s\n", basename($PROGRAM_NAME), MMM_VERSION;
+	exit(0);
+}
+
+
+chdir('/');
+umask(0022);
+
+our $cluster_name = '';
+my $postfix = '';
+if (scalar(@ARGV) && $ARGV[0] =~ /^@(.*)/) {
+    shift(@ARGV);
+    $cluster_name = $1;
+    $postfix = "_$cluster_name";
+        $PROGRAM_NAME = basename($PROGRAM_NAME) . '-' . $cluster_name;
+}
+else {
+        $PROGRAM_NAME = basename($PROGRAM_NAME);
+}
+
+
+
+
+MMM::Common::Log::init("mmm_agent_log$postfix.conf", "mmm_agentd$postfix");
+
+# Read configuration
+our $config = new MMM::Common::Config::;
+$config->read("mmm_agent$postfix");
+$config->check('AGENT');
+
+
+
+
+my $debug = $config->{debug};
+
+MMM::Common::Log::debug() if ($debug);
+
+our $agent	= new MMM::Agent::Agent::(
+	protocol_version	=> 1,
+	active_master		=> '',
+	state				=> 'UNKNOWN',
+	config_file		=> "mmm_agent$postfix"
+);
+$agent->from_config($config);
+
+my $pidfilename = $config->{host}->{ $config->{this} }->{pid_path};
+my $pidfile = new MMM::Common::PidFile:: $pidfilename;
+
+# Check pid file
+LOGDIE	"Can't run second copy of ", $PROGRAM_NAME	if ($pidfile->is_running());
+WARN	"Unclean start - found stale pid file!"		if ($pidfile->exists());
+
+unless ($debug) {
+	# Go to background
+	Proc::Daemon::Init();
+	# Set umask again
+	umask(0022);
+	# Init logging again to re-open fds
+	MMM::Common::Log::init("mmm_agent_log$postfix.conf", "mmm_agentd$postfix");
+}
+
+# Init angel magic, which will restart us if we die unexpected
+MMM::Common::Angel::Init($pidfile);
+
+# Shutdown flag
+our $shutdown = 0;
+
+# Set signal handlers
+$SIG{INT} = \&ShutdownHandler;
+$SIG{TERM} = \&ShutdownHandler;
+$SIG{QUIT} = \&ShutdownHandler;
+
+$agent->main();
+
+INFO 'END';
+exit(0);
+
+#-----------------------------------------------------------------
+sub ShutdownHandler() {
+	INFO "Signal received: exiting...";
+	$shutdown = 1;
+}

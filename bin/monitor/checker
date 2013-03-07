@@ -1,0 +1,142 @@
+#!/usr/bin/env perl
+
+# Use mandatory external modules
+use strict;
+use warnings FATAL => 'all';
+use English qw( OUTPUT_AUTOFLUSH );
+use Log::Log4perl qw(:easy);
+
+# TODO configurable logging via MMM::Common::Log
+
+# Include parts of the system
+use MMM::Common::Config;
+use MMM::Monitor::Checker::Checks;
+
+# Disable output buffering
+$OUTPUT_AUTOFLUSH = 1;
+
+# Check if cluster was passed
+my $postfix = "";
+if (scalar(@ARGV) && $ARGV[0] =~ /^@(.*)/) {
+    shift(@ARGV);
+    $postfix = "_$1";
+}
+
+# Check arguments
+if (scalar(@ARGV) != 1) {
+	print "Usage: $0 <check>\n\n";
+	exit(1);
+}
+
+# Fetch arguments
+my $check_name = shift;
+
+
+# Read config file
+our $config = new MMM::Common::Config::;
+$config->read("mmm_mon$postfix");
+$config->check('MONITOR');
+
+our $check;
+
+# NOTE: the check "ping_ip" is not a host check. Its a checker for pinging single IPs to test if the monitor network connection is still working.
+if ($check_name eq 'ping_ip') {
+	$check = {
+		restart_after	=> 0,
+		timeout			=> 1
+	}
+}
+else {
+	LOGDIE "checker: Unknown check $check_name" unless (defined($config->{check}->{$check_name}));
+	$check = \%{$config->{check}->{$check_name}};
+}
+
+my $check_function;
+if    ($check_name eq 'ping_ip'    ) { $check_function = \&MMM::Monitor::Checker::Checks::ping_ip;		}
+elsif ($check_name eq 'ping'       ) { $check_function = \&MMM::Monitor::Checker::Checks::ping;			}
+elsif ($check_name eq 'mysql'      ) { $check_function = \&MMM::Monitor::Checker::Checks::mysql;		}
+elsif ($check_name eq 'rep_backlog') { $check_function = \&MMM::Monitor::Checker::Checks::rep_backlog;	}
+elsif ($check_name eq 'rep_threads') { $check_function = \&MMM::Monitor::Checker::Checks::rep_threads;	}
+else { LOGDIE "checker: Unknown check $check_name"; }
+
+my $max_checks	= $check->{restart_after};
+my $timeout		= $check->{timeout};
+
+# Workaround to prevent checker from hanging in case of unnoticed broken pipe errors
+my $max_empty_commands	= 100;
+my $empty_commands		= 0;
+
+INFO "$check_name: Start";
+
+# Process loop
+while (!eof(STDIN)) {
+
+	# Check if it is time to die
+	if ($max_checks && $max_checks < 1) {
+		INFO "$check_name: Max checks performed, restarting...";
+		last;
+	}
+
+	# Read command
+	chomp(my $cmd = <STDIN>);
+	my @command	= split(/\s+/, $cmd);
+	my $params	= scalar(@command) - 1;
+
+	# Workaround to  prevent checker from hanging in case of unnoticed broken pipe errors
+	if ($params < 0) {
+		if (++$empty_commands > $max_empty_commands) {
+			WARN "$check_name: Too many empty commands ($empty_commands) in a row - looks like pipe is broken! Exiting!";
+			last;
+		}
+		next;
+	}
+	$empty_commands = 0;
+
+
+	last if ($command[0] eq 'quit' && $params == 0);
+
+	if ($command[0] eq 'ping' && $params == 0) {
+		print "OK: Pong!\n";
+		next;
+	}
+	if ($command[0] eq 'check' && $params == 1) {
+		print $check_function->($timeout, $command[1]), "\n";
+		next;
+	}
+
+	print "ERROR: Invalid command '$cmd'\n";
+}
+INFO "$check_name: Exit";
+
+print "OK: Finished\n";
+exit(0);
+
+__END__
+
+=head1 NAME
+
+checker
+
+=head1 DESCRIPTION
+
+B<checker> is a helper binary for B<mmm_mond>. It is called from, and communicates with B<mmm_mond>. B<checker> processes commands from STDIN and writes the results of this commands to STDOUT:
+
+=open 4
+
+=item ping
+
+	Check if B<checker> is still alive.
+
+=back
+
+=head1 USAGE
+
+checker <check>
+
+
+=head1 EXAMPLES
+
+checker ping
+checker mysql
+checker rep_backlog
+checker rep_threads

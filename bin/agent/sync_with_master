@@ -1,0 +1,39 @@
+#!/usr/bin/env perl
+
+# Use mandatory external modules
+use strict;
+use warnings FATAL => 'all';
+use MMM::Common::Config;
+use MMM::Agent::Helpers::Actions;
+
+# Check arguments
+if (scalar(@ARGV) != 1) {
+	print "Usage: $0 <config_file>\n\n";
+	exit(1);
+}
+
+# Read config file
+my $config_file = shift;
+our $config = new MMM::Common::Config::;
+$config->read($config_file);
+$config->check('AGENT');
+
+# Finally do the work
+my $output = MMM::Agent::Helpers::Actions::sync_with_master();
+
+print $output, "\n";
+exit(0);
+
+__END__
+
+=head1 NAME
+
+sync_with_master
+
+=head1 DESCRIPTION
+
+sync_with_master is a helper binary for B<mmm_agentd>. It tries to sync up a (soon active) master with his peer (old active master) when the I<active_master_role> is moved. If the peer is reachable it syncs with the master log. If not reachable, syncs with the relay log.
+
+=head1 USAGE
+
+sync_with_master

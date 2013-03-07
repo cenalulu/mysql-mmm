@@ -1,0 +1,6 @@
+
+1. Install dependencies
+	See .pdf-Documentation.
+
+2. Install mysql-mmm 
+	make install

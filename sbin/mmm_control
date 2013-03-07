@@ -1,0 +1,49 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings FATAL => 'all';
+use English qw( PROGRAM_NAME );
+use File::Basename;
+use Log::Log4perl qw(:easy);
+Log::Log4perl->easy_init($INFO);
+
+# Define version
+use constant MMM_VERSION => '2.2.1';
+
+# Include parts of the system
+use MMM::Common::Config;
+use MMM::Common::Socket;
+
+# Maybe we were just asked for our version
+if (scalar(@ARGV) && $ARGV[0] eq "--version") {
+    printf "%s %s\n", basename($PROGRAM_NAME), MMM_VERSION;
+    exit(0);
+}
+
+my $postfix = '';
+if (scalar(@ARGV) && $ARGV[0] =~ /^@(.*)/) {
+    shift(@ARGV);
+    $postfix = "_$1";
+}
+
+# Read configuration
+our $config = new MMM::Common::Config::;
+$config->read("mmm_mon$postfix");
+$config->check('CONTROL');
+
+die "See '$0 help' for usage information" if (scalar(@ARGV) < 1);
+
+my $socket = MMM::Common::Socket::create_sender($config->{monitor}->{ip}, $config->{monitor}->{port}, 10);
+unless ($socket && $socket->connected) {
+	print "ERROR: Can't connect to monitor daemon!\n";
+	exit(1);
+}
+
+print $socket join(' ', @ARGV), "\nquit\n";
+my $res = '';
+my $line;
+$res .= $line while ($line = <$socket>);
+print $res, "\n";
+
+exit(0);
+

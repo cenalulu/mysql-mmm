@@ -1,0 +1,97 @@
+#!/bin/sh
+#
+# mysql-mmm-monitor  This shell script takes care of starting and stopping
+#                    the mmm monitoring daemon.
+#
+# chkconfig: - 64 36
+# description:  MMM Monitor.
+# processname: mmm_mond
+# config: /etc/mmm_mon.conf
+# pidfile: /var/run/mmm_mond.pid
+
+# Cluster name (it can be empty for default cases)
+CLUSTER=''
+
+
+#-----------------------------------------------------------------------
+# Paths
+if [ "$CLUSTER" != "" ]; then
+    MMM_MOND_BIN="/usr/sbin/mmm_mond @$CLUSTER"
+    MMM_MOND_PIDFILE="/var/run/mmm_mond-$CLUSTER.pid"
+else 
+    MMM_MOND_BIN="/usr/sbin/mmm_mond"
+    MMM_MOND_PIDFILE="/var/run/mmm_mond.pid"
+fi
+
+echo "Daemon bin: '$MMM_MOND_BIN'"
+echo "Daemon pid: '$MMM_MOND_PIDFILE'"
+
+#-----------------------------------------------------------------------
+# See how we were called.
+case "$1" in
+  start)
+        # Start daemon.
+        echo -n "Starting MMM Monitor daemon: "
+        if [ -s $MMM_MOND_PIDFILE ] && kill -0 `cat $MMM_MOND_PIDFILE` 2> /dev/null; then
+            echo " already running."
+            exit 0
+        fi
+        $MMM_MOND_BIN
+        if [ "$?" -ne 0 ]; then
+            echo "failed"
+            exit 1
+        fi
+        echo "Ok"
+        exit 0
+        ;;
+
+  stop)
+        # Stop daemon.
+        echo -n "Shutting down MMM Monitor daemon: "
+        if [ -s $MMM_MOND_PIDFILE ]; then
+            pid="$(cat $MMM_MOND_PIDFILE)"
+            cnt=0
+            kill "$pid"
+            while kill -0 "$pid" 2>/dev/null; do
+                cnt=`expr "$cnt" + 1`
+                if [ "$cnt" -gt 15 ]; then
+                    kill -9 "$pid"
+                    break
+                fi
+                sleep 2
+                echo -n "."
+            done
+            echo " Ok"
+            exit 0
+        fi
+        echo " not running."
+        exit 0
+        ;;
+
+  status)
+        echo -n "Checking MMM Monitor process:"
+        if [ ! -s $MMM_MOND_PIDFILE ]; then
+            echo " not running."
+            exit 3
+        fi
+        pid="$(cat $MMM_MOND_PIDFILE)"
+        if ! kill -0 "$pid" 2> /dev/null; then
+            echo " not running."
+            exit 1
+        fi
+        echo " running."
+        exit 0
+        ;;
+
+  restart|reload)
+        $0 stop
+        $0 start
+        exit $?
+        ;;
+
+  *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        ;;
+esac
+
+exit 1

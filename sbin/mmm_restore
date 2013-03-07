@@ -1,0 +1,246 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings FATAL => 'all';
+use English qw( PROGRAM_NAME FORMAT_NAME );
+use File::Basename;
+use Log::Log4perl qw(:easy);
+use Getopt::Long;
+Log::Log4perl->easy_init( { level => $INFO, layout => '%p: %m%n' });
+
+# Define version
+use constant MMM_VERSION => '2.2.1';
+
+# Include parts of the system
+use MMM::Common::Config;
+use MMM::Tools::Tools;
+use MMM::Tools::MySQL;
+
+# Maybe we were just asked for our version
+if (scalar(@ARGV) == 1 && $ARGV[0] eq "--version") {
+    printf "%s %s\n", basename($PROGRAM_NAME), MMM_VERSION;
+    exit(0);
+}
+
+my @RESTORE_MODES = qw(
+	data-only
+
+	single-single
+	slave-single
+	master-single
+
+	master-slave
+	slave-slave
+);
+
+my $config_file	= '';
+my $src_dir	= '';
+my $dest_dir	= '';
+my $restore_mode= '';
+my $version		= '';
+my $skip_mysqld	= 0;
+my $dry_run		= 0;
+
+print_usage() unless (
+	GetOptions(
+		'config=s'		=> \$config_file,
+		'src-dir=s'		=> \$src_dir,
+		'dest-dir=s'	=> \$dest_dir,
+		'mode=s'		=> \$restore_mode,
+		'version=s'		=> \$version,
+		'dry-run'		=> \$dry_run
+	)
+);
+
+# Set defaults (part 1)
+$config_file	= 'mmm_tools'			if ($config_file	eq '');
+$restore_mode	= 'single-single'		if ($restore_mode	eq '');
+$skip_mysqld	= 1						if ($restore_mode	eq 'data-only');
+
+# Read configuration
+our $config = new MMM::Common::Config::;
+$config->read($config_file);
+$config->check('TOOLS');
+
+my $host = $config->{host}->{$config->{this}};
+
+# Set defaults (part 2)
+$src_dir		= $host->{backup_dir}	if ($src_dir		eq '');
+$dest_dir		= $host->{restore_dir}	if ($dest_dir		eq '');
+
+# Check params
+print_usage("Invalid restore mode '$restore_mode'")	unless (grep(/^$restore_mode$/, @RESTORE_MODES));
+print_usage("Invalid backup directory '$src_dir'")	unless (MMM::Tools::Tools::check_restore_source($src_dir));
+
+if ($version eq 'list') {
+	# Print list of increments
+	die unless (MMM::Tools::Tools::list_increments($src_dir, 'rdiff'));
+	exit 0;
+}
+
+# Load information from status file
+my $status = MMM::Tools::Tools::load_status($src_dir);
+die unless (defined($status));
+
+
+# Check copy method of backup
+unless (defined($config->{copy_method}->{$status->{copy_method}})) {
+	ERROR "Backup was created with unknown copy-method '$status->{copy_method}' - can't restore it";
+	die;
+}
+
+# Check if backup is incremental and we were called with version
+if ($config->{copy_method}->{$status->{copy_method}}->{incremental} && $version eq '') {
+	ERROR "'$src_dir' contains an incremental backup, but no version was specified";
+	MMM::Tools::Tools::list_increments($src_dir, 'rdiff');
+	die;
+}
+
+
+# Determine replication peer
+$restore_mode =~ /(\w+)\-(\w+)/;
+my $src_mode	= $1;
+my $dest_mode	= $2;
+
+my $peer_host	= $status->{host};
+my $peer_host_info;
+if ($src_mode eq 'slave') {
+	$peer_host	= MMM::Tools::Tools::get_host_by_ip($status->{slave}->{'Master_Host'});
+}
+unless ($dest_mode eq 'single' || $skip_mysqld) {
+	unless (defined($config->{host}->{$peer_host})) {
+		LOGDIE "Unknown peer host '$peer_host'";
+	}
+	$peer_host_info = $config->{host}->{$peer_host};
+}
+
+
+# Print info
+my $label;
+my $value;
+format RESTORE_INFO =
+ @<<<<<<<<<<<<<<<<<<<<<: @<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+ $label,               $value
+.
+$FORMAT_NAME = 'RESTORE_INFO';
+
+$label = 'Source dir';
+$value = $src_dir;
+write;
+
+$label = 'Destination dir';
+$value = $dest_dir;
+write;
+
+$label = 'Dirs to restore';
+$value = join(', ', sort(@{$config->{clone_dirs}}));
+write;
+
+$label = 'Restore mode';
+$value = $restore_mode;
+write;
+
+if ($version ne '') {
+	$label = 'Incremental version';
+	$value = $version;
+	write;
+}
+
+if (defined($peer_host_info)) {
+	$label = 'Replication peer';
+	$value = $peer_host;
+	write;
+}
+
+$label = 'Skip mysqld operations';
+$value = $skip_mysqld ? 'yes' : 'no';
+write;
+
+$label = 'Dry run';
+$value = $dry_run ? 'yes' : 'no';
+write;
+
+
+
+# Stop here if this is a dry-run
+exit 0 if ($dry_run);
+
+
+
+unless ($skip_mysqld) {
+	# Stop MySQL server
+	die unless (MMM::Tools::MySQL::stop());
+}
+
+
+# Check/Create destination directory
+die unless (MMM::Tools::Tools::check_restore_destination($dest_dir));
+
+
+# Restore backup
+if ($version eq '') {
+	die unless (MMM::Tools::Tools::restore($status->{copy_method}, $src_dir, $dest_dir));
+}
+else {
+	die unless (MMM::Tools::Tools::restore_incremental($status->{copy_method}, $src_dir, $dest_dir, $version));
+}
+
+
+# Cleanup
+die unless (MMM::Tools::Tools::cleanup($status, $dest_dir, $config->{clone_dirs}));
+
+
+unless ($skip_mysqld) {
+
+	# Start MySQL server
+	die unless (MMM::Tools::MySQL::start());
+
+
+	# Setup replication
+	if ($dest_mode eq 'single') {
+		INFO "Skipping replication setup because destination configuration is '$dest_mode'";
+	}
+	else {
+		my %dest_replication_info		= (
+			host		=> $config->{this},
+			master_host	=> $peer_host_info->{ip},
+			master_port	=> $peer_host_info->{mysql_port},
+			master_user	=> $peer_host_info->{replication_user},
+			master_pass	=> $peer_host_info->{replication_password},
+		);
+
+		if ($src_mode eq 'master' && $dest_mode eq 'slave') {
+			$dest_replication_info{master_log}	= $status->{master}->{'File'};
+			$dest_replication_info{master_pos}	= $status->{master}->{'Position'};
+			die unless MMM::Tools::MySQL::change_master_to(\%dest_replication_info);
+		}
+		elsif ($src_mode eq 'slave' && $dest_mode eq 'slave') {
+			$dest_replication_info{master_log}	= $status->{slave}->{'Relay_Master_Log_File'};
+			$dest_replication_info{master_pos}	= $status->{slave}->{'Exec_Master_Log_Pos'};
+			die unless MMM::Tools::MySQL::change_master_to(\%dest_replication_info);
+		}
+		else {
+			WARN "Bad restore mode '$src_mode-$dest_mode', skipping replication setup";
+		}
+	}
+}
+
+INFO 'Restore operation finished!';
+
+exit 0;
+
+sub print_usage {
+	my $msg = shift;
+
+	print "$msg\n\n" if ($msg);
+	print "Usage: $0 [--config <config file>] [--mode <mode>] [--version <version | list>] [--src-dir <dir>] [--dest-dir <dir>] [--dry-run]\n";
+	print "Where:\n";
+	print "  src-dir : directory where backup resides\n";
+	print "  dest-dir: directory where backup should be restored to\n";
+	print "  mode    : " . join(', ', @RESTORE_MODES) . "\n";
+	print "  version : \n";
+	print "    - when run with 'list' parameter, displays available versions of incremental backups\n";
+	print "    - if version is specified, tries to restore backup for specified version\n";
+	print "  dry-run : check everything and exit without any changes\n\n";
+	exit(1);
+}

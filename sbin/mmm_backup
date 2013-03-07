@@ -1,0 +1,78 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings FATAL => 'all';
+use English qw( PROGRAM_NAME );
+use File::Basename;
+use Log::Log4perl qw(:easy);
+use Getopt::Long;
+Log::Log4perl->easy_init( { level => $INFO, layout => '%p: %m%n' });
+
+# Define version
+use constant MMM_VERSION => '2.2.1';
+
+# Include parts of the system
+use MMM::Common::Config;
+use MMM::Tools::Tools;
+
+# Maybe we were just asked for our version
+if (scalar(@ARGV) == 1 && $ARGV[0] eq "--version") {
+    printf "%s %s\n", basename($PROGRAM_NAME), MMM_VERSION;
+    exit(0);
+}
+
+
+my $config_file	= '';
+my $host_name	= '';
+my $copy_method	= '';
+my $dest_dir	= '';
+
+print_usage() unless (
+	GetOptions(
+		'config=s'      => \$config_file,
+		'host=s'        => \$host_name,
+		'copy-method=s' => \$copy_method,
+		'dest-dir=s'    => \$dest_dir
+	)
+);
+
+$config_file	= 'mmm_tools'						if ($config_file eq '');
+
+# Read configuration
+our $config = new MMM::Common::Config::;
+$config->read($config_file);
+$config->check('TOOLS');
+
+print_usage("Invalid host name '$host_name'") unless (defined($config->{host}->{$host_name}));
+
+my $host = $config->{host}->{$host_name};
+
+$copy_method	= $config->{default_copy_method}	if ($copy_method eq '');
+$dest_dir		= $host->{backup_dir}				if ($dest_dir    eq '');
+
+print_usage("Invalid copy method '$copy_method'")	unless (defined($config->{copy_method}->{$copy_method}));
+my $should_be_empty = (!$config->{copy_method}->{$copy_method}->{incremental});
+print_usage("Invalid backup directory '$dest_dir'")	unless (MMM::Tools::Tools::check_backup_destination($dest_dir, $should_be_empty));
+
+die unless (MMM::Tools::Tools::check_ssh_connection($host_name));
+die unless (MMM::Tools::Tools::create_remote_snapshot($host_name));
+die unless (MMM::Tools::Tools::copy_clone_dirs($host_name, $copy_method, $dest_dir));
+die unless (MMM::Tools::Tools::copy_from_remote($host_name, 'scp', $dest_dir, '_mmm'));
+die unless (MMM::Tools::Tools::save_copy_method($dest_dir, $copy_method));
+die unless (MMM::Tools::Tools::remove_remote_snapshot($host_name));
+
+exit 0;
+
+sub print_usage {
+	my $msg = shift;
+
+	print "$msg\n\n" if ($msg);
+	print "Usage: $0 [--config <config file>] --host <host> [--copy-method <copy method>] [--dest-dir <dir>]\n";
+	if ($main::config) {
+		print "Where:\n";
+		printf("  host       : %s\n", join(' | ', sort(keys(%{$main::config->{host}}))));
+		printf("  copy-method: %s (default: %s)\n", join(' | ', sort(keys(%{$main::config->{copy_method}}))), $config->{default_copy_method});
+		print  "  dest-dir   : directory where data should be backed up to\n\n";
+	}
+	exit(1);
+}

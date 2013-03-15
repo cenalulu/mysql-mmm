@@ -144,10 +144,12 @@ sub sync_with_master() {
 
 
 sub get_master_log_file(){
+	sync_with_master();
 	return _execute('get_master_log_file');
 }
 
 sub get_master_log_pos() {
+	sync_with_master();
 	return _execute('get_master_log_pos');
 }
 

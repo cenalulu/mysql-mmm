@@ -309,7 +309,7 @@ sub get_master_log_file(){
 
 
 sub get_master_log_pos(){
-       my $this = _get_this();
+		my $this = _get_this();
 
         # Get local connection info
         my ($this_host, $this_port, $this_user, $this_password) = _get_connection_info($this);

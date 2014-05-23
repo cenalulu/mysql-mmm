@@ -138,13 +138,6 @@ sub cmd_ping($) {
 	my $retries	= shift || 0;
 	return $self->_send_command_retry($retries, 'PING');
 }
-sub cmd_get_master_log_file($$) {
-	my $self	= shift;
-	my $master	= shift;
-	my $retries	= shift || 0;
-
-	return $self->_send_command_retry($retries, 'GET_MASTER_LOG', $self->state, join(',', sort(@{$self->roles})), $master);
-}
 
 sub cmd_get_master_log_pos($$) {
 	my $self	= shift;

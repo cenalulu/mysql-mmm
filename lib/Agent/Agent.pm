@@ -252,11 +252,6 @@ sub cmd_set_status($$) {
 	return 'OK: Status applied successfully!';
 }
 
-sub cmd_get_master_log_file(){
-	my $res = MMM::Agent::Helpers::get_master_log_file();
-	return $res;
-}
-
 sub cmd_get_master_log_pos(){
 	my $res = MMM::Agent::Helpers::get_master_log_pos();
 	return $res;

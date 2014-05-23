@@ -89,6 +89,19 @@ sub allow_write() {
 }
 
 
+=item mysql_kill_process( )
+
+Deny writes on local MySQL server. Sets global read_only to 1.
+
+Calls B<bin/agent/mysql_kill_process>, which reads the config file.
+
+=cut
+
+sub kill_process() {
+	return _execute('kill_process');
+}
+
+
 =item mysql_deny_write( )
 
 Deny writes on local MySQL server. Sets global read_only to 1.
@@ -142,11 +155,14 @@ sub sync_with_master() {
 	return _execute('sync_with_master');
 }
 
+=item get_master_log_pos( )
 
-sub get_master_log_file(){
-	sync_with_master();
-	return _execute('get_master_log_file');
-}
+Try to get current new master's binlog filename and position.
+The information will be used for slave to issue "change master to"
+
+Calls B<bin/agent/get_master_log_pos>, which reads the config file.
+
+=cut
 
 sub get_master_log_pos() {
 	sync_with_master();

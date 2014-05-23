@@ -705,8 +705,7 @@ sub _distribute_roles($) {
 		$self->send_agent_status($old_active_master, $new_active_master) if ($old_active_master);
 		#my ($new_master_log,$new_master_pos) = $self->get_active_master_pos();
 		# save the new master log-pos now, it'll be used when "change master to" is issued for slaves
-		my $new_master_log = $self->get_master_log_file($new_active_master);
-		my $new_master_pos= $self->get_master_log_pos($new_active_master);
+		my ($new_master_log, $new_master_pos) = split(/:/ , $self->get_master_log_pos($new_active_master));
 		DEBUG "Successfully got new master pos:$new_master_log:$new_master_pos";
 
 
@@ -791,26 +790,6 @@ sub notify_slaves($$) {
 		DEBUG "Notify host:$host, master_str:$new_master_str";
 		$self->send_agent_status($host, $new_master_str);
 	}
-}
-
-
-=item get_master_log_file($host[, $master])
-
-Send status information to agent on host $host.
-
-=cut
-
-sub get_master_log_file($$$$$) {
-	my $self	= shift;
-	my $host	= shift;
-
-
-	my $agent = MMM::Monitor::Agents->instance()->get($host);
-
-	# Finally send command
-	my $ret = $agent->cmd_get_master_log_file($host);
-	INFO "cmd_get_master_log_file return $ret";
-	return $ret;
 }
 
 =item get_master_log_pos($host[, $master])

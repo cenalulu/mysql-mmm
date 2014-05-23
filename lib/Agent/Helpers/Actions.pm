@@ -114,6 +114,17 @@ sub mysql_allow_write() {
 }
 
 
+=item mysql_kill_process( )
+
+kill all user process on local MySQL
+
+=cut
+
+sub mysql_kill_process() {
+	killall_sql();
+	_exit_ok();
+}
+
 =item mysql_deny_write( )
 
 Deny writes on local MySQL server. Sets global read_only to 1.
@@ -150,6 +161,59 @@ sub _mysql_set_read_only($) {
 	return 1;
 }
 
+=item killall_sql 
+
+kill all user threads to prevent further writes
+
+=cut
+
+sub killall_sql() {
+	
+	my ($host, $port, $user, $password)	= _get_connection_info();
+	_exit_error('No connection info') unless defined($host);
+
+	# Connect to server
+	my $dbh = _mysql_connect($host, $port, $user, $password);
+	_exit_error("Can't connect to MySQL (host = $host:$port, user = $user)! " . $DBI::errstr) unless ($dbh);
+
+	my $my_id = $dbh->{'mysql_thread_id'};
+
+	my $max_retries		= 2;
+	my $elapsed_retries	= 0;
+	my $retry			= 1;
+
+	while ($elapsed_retries < $max_retries && $retry) {
+		$retry = 0;
+
+		# Fetch process list
+		my $processlist = $dbh->selectall_hashref('SHOW PROCESSLIST', 'Id');
+		
+		# Kill processes
+		foreach my $id (keys(%{$processlist})) {
+			# Skip ourselves
+			next if ($id == $my_id);
+	
+			# Skip non-client threads (i.e. I/O or SQL threads used on replication slaves, ...)
+			next if ($processlist->{$id}->{User} eq 'system user');
+	
+			# skip threads of replication clients
+			next if ($processlist->{$id}->{Command} eq 'Binlog Dump');
+
+			# Give threads a chance to finish if we're not on our last retry
+			if ($elapsed_retries < $max_retries
+			 && defined ($processlist->{$id}->{Info})
+			 && $processlist->{$id}->{Info} =~ /^\s*(\/\*.*?\*\/)?\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|REPAIR|OPTIMIZE|ANALYZE|CHECK)/si
+			) {
+				# Kill process
+				$dbh->do("KILL $id");
+				next;
+	        }
+
+		}
+
+		$elapsed_retries++;
+	}
+}
 
 =item kill_sql 
 
@@ -319,15 +383,17 @@ sub get_master_log_pos(){
         my $this_dbh = _mysql_connect($this_host, $this_port, $this_user, $this_password);
         _exit_error("Can't connect to MySQL (host = $this_host:$this_port, user = $this_user)! " . $DBI::errstr) unless ($this_dbh);
 
+        my $master_log_file;
         my $master_log_pos;
         if ($this_dbh) {
                 my $old_master_status = $this_dbh->selectrow_hashref('SHOW MASTER STATUS');
                 if (defined($old_master_status)) {
+                        $master_log_file= $old_master_status->{File};
                         $master_log_pos= $old_master_status->{Position};
                 }
                 $this_dbh->disconnect;
         }
-        return $master_log_pos;
+        return "$master_log_file:$master_log_pos";
 }
 
 =item set_active_master($new_master)

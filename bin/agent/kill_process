@@ -1,0 +1,36 @@
+#!/usr/bin/env perl
+
+# Use mandatory external modules
+use strict;
+use warnings FATAL => 'all';
+use MMM::Agent::Helpers::Actions;
+
+# Check arguments
+if (scalar(@ARGV) != 1) {
+	print "Usage: $0 <config_file> \n\n";
+	exit(1);
+}
+
+# Fetch arguments
+my $config_file = shift;
+
+# Finally do the work
+MMM::Agent::Helpers::Actions::kill_process();
+
+__END__
+
+=head1 NAME
+
+kill_process
+
+=head1 DESCRIPTION
+
+kill_process is a helper binary for B<mmm_agentd>. It kills all processes in MySQL
+
+=head1 USAGE
+
+kill_process 
+
+=head1 EXAMPLE
+
+kill_process 

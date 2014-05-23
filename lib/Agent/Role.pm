@@ -84,17 +84,25 @@ sub del($) {
 
 	my $res;
 	
-	if ($self->name eq $main::agent->writer_role) {
-		$res = MMM::Agent::Helpers::deny_write();
-		if (!defined($res) || $res !~ /^OK/) {
-			FATAL sprintf("Couldn't deny writes: %s", defined($res) ? $res : 'undef');
-		}
-	}
-
 	$res = MMM::Agent::Helpers::clear_ip($main::agent->interface, $self->ip);
 	if (!defined($res) || $res !~ /^OK/) {
 		FATAL sprintf("Couldn't clear IP '%s' from interface '%s': %s", $self->ip, $main::agent->interface, defined($res) ? $res : 'undef');
 	}
+
+	#kill all active process 
+	#let all uncommited transactions to rollback
+	$res = MMM::Agent::Helpers::kill_process();
+	if (!defined($res) || $res !~ /^OK/) {
+		FATAL sprintf("Couldn't kill active process in MySQL: %s", defined($res) ? $res : 'undef');
+	}
+
+       if ($self->name eq $main::agent->writer_role) {
+                $res = MMM::Agent::Helpers::deny_write();
+                if (!defined($res) || $res !~ /^OK/) {
+                        FATAL sprintf("Couldn't deny writes: %s", defined($res) ? $res : 'undef');
+                }
+        }
+
 }
 
 1;

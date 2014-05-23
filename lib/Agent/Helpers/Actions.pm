@@ -349,29 +349,6 @@ sub sync_with_master() {
 	
 }
 
-sub get_master_log_file(){
-        my $this = _get_this();
-
-        # Get local connection info
-        my ($this_host, $this_port, $this_user, $this_password) = _get_connection_info($this);
-        _exit_error("No connection info for local host '$this_host'") unless defined($this_host);
-
-        # Connect to local server
-        my $this_dbh = _mysql_connect($this_host, $this_port, $this_user, $this_password);
-        _exit_error("Can't connect to MySQL (host = $this_host:$this_port, user = $this_user)! " . $DBI::errstr) unless ($this_dbh);
-
-        my $master_log_file='';
-        if ($this_dbh ) {
-                my $old_master_status = $this_dbh->selectrow_hashref('SHOW MASTER STATUS');
-                if (defined($old_master_status)) {
-                        $master_log_file = $old_master_status->{File};
-                }
-                $this_dbh->disconnect;
-        }
-        return $master_log_file;
-}
-
-
 sub get_master_log_pos(){
 		my $this = _get_this();
 

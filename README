@@ -1,2 +1,5 @@
-This is mysql-mmm-2.2.2
-new
+This is mysql-mmm-2.3.1
+
+Change Log For 2.3.1
+	#change: merge get_master_log_fil & get_master_log_pos into one command call
+	#change: remove vip before deny_write, when doing set_offline writer

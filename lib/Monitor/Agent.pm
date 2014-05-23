@@ -147,7 +147,6 @@ sub cmd_get_master_log_pos($$) {
 	return $self->_send_command_retry($retries, 'GET_MASTER_POS', $self->state, join(',', sort(@{$self->roles})), $master);
 }
 
-
 sub cmd_set_status($$) {
 	my $self	= shift;
 	my $master_str	= shift;
